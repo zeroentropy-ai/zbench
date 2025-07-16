@@ -1,19 +1,9 @@
-"""
-Comprehensive dataset processing pipeline that:
-1. Reads dataset.jsonl
-2. Creates pairs for AI scoring
-3. Runs batch processing
-4. Finalizes AI scores
-5. Composes annotated dataset
-"""
-
 import asyncio
 from pathlib import Path
 import numpy as np
 from collections import defaultdict
 import argparse
 from tqdm import tqdm
-from tqdm.asyncio import tqdm as atqdm
 import random
 from shutil import copy2
 
