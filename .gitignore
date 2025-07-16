@@ -1,0 +1,19 @@
+# Random Files
+.DS_Store
+*.swp
+.vscode
+.venv
+__pycache__
+.ruff_cache
+*.log
+*.egg-info
+.ipynb_checkpoints
+.cache
+unsloth_compiled_cache
+unsloth_training_checkpoints
+
+# Custom Ignores
+logs/
+tmp
+data
+.env

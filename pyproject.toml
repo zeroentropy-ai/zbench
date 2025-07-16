@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zbench"
+version = "0.1.0"
+description = "ZeroEntropy benchmarking tools"
+requires-python = ">=3.8"
+dependencies = [
+    "pydantic",
+    "numpy",
+    "tqdm",
+    "aiohttp",
+    "zeroentropy",
+    "cohere",
+    "python-dotenv",
+]
+
+[tool.setuptools.packages.find]
+include = ["zbench*", "ensemble*"]
+exclude = ["tmp*", "tests*", "data*"]
+
+[tool.setuptools.package-data]
+zbench = ["*.py"]
+ensemble = ["*.py"]
