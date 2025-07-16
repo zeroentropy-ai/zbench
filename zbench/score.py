@@ -197,9 +197,3 @@ Do NOT output a score of 0.0, ensure to focus on which document is superior, and
     def save_scores(self, scores: DatasetPairScoredPairs) -> None:
         with open(self.scores_path, "w") as f:
             f.write(scores.model_dump_json(indent=4))
-
-if __name__ == "__main__":
-    score = Score(pairs_path=f"{ROOT}/data/datasets/trec_covid/pairs.json", scores_path=f"{ROOT}/data/datasets/trec_covid/regular_scores.json")
-    pairs = score.load_pairs()
-    scores = asyncio.run(score.score_pairs(pairs))
-    score.save_scores(scores)
