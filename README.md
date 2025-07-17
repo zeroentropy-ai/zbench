@@ -11,7 +11,7 @@
 
 ### Environment Setup
 
-For the annotation purposes, zbench is going to call an ensemble of OpenAI GPT-4, Anthropic Claude, and Google Gemini. To make this work, create a `.env` file in the root directoruy with your API keys:
+For annotation purposes, zbench is going to call an ensemble of OpenAI GPT-4, Anthropic Claude, and Google Gemini. To make this work, create a `.env` file in the root directory with your API keys:
 
 ```env
 OPENAI_API_KEY=your_openai_api_key
@@ -19,7 +19,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key
 GEMINI_API_KEY=your_gemini_api_key
 ```
 
-Approximate price of annotation: 20 USD / 1000 paiwise comparisons (Note: one query annotation takes around `(cycle_num) * (number of documents for the query)` comparisons)
+Approximate price of annotation: 20 USD / 1000 pairwise comparisons (Note: one query annotation takes around `(cycle_num) * (number of documents for the query)` comparisons)
 
 ## Quick Start
 
@@ -155,7 +155,7 @@ Converts pairwise scores into ELO ratings using an algorithm from https://hackmd
 
 ### Defining a Custom Reranker
 
-A reranker is a `zbench.common_types.Reranker` class that contaion an async function that takes `zbench.common_types.RerankerInput` (a query and list of documents) and returns relevance scores for all of them:
+A reranker is a `zbench.common_types.Reranker` class that contains an async function that takes `zbench.common_types.RerankerInput` (a query and list of documents) and returns relevance scores for all of them:
 
 ```python
 from zbench.common_types import Reranker, RerankerInput
@@ -240,6 +240,6 @@ scores = await benchmark_reranker(
 For large datasets, consider:
 
 1. **Increase document threshold gradually**: Start with 10, increase if needed
-2. **Use fewer cycles for initial testing**: In practice no more than 4 cycles are need for the ELO convergence
+2. **Use fewer cycles for initial testing**: In practice, no more than 4 cycles are needed for the ELO convergence
 3. **Monitor API costs**: Each pair requires 3 AI model calls, approximated cost: 20 USD / 1000 pairwise comparisons
 4. **Implement checkpointing**: Save intermediate results, do not run on thousands of queries right away
