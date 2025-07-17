@@ -78,10 +78,7 @@ class RerankerInput(BaseModel):
     documents: list[str]
 
 class Reranker(BaseModel):
-    reranker: Callable[[RerankerInput], list[float]] | Callable[[RerankerInput], Awaitable[list[float]]]
+    reranker: Callable[[RerankerInput], Awaitable[list[float]]]
 
-    def __call__(self, input: RerankerInput) -> list[float]:
-        if asyncio.iscoroutinefunction(self.reranker):
-            return asyncio.run(self.reranker(input))
-        else:
-            return self.reranker(input)
+    async def __call__(self, input: RerankerInput) -> Awaitable[list[float]]:
+        return await self.reranker(input)
