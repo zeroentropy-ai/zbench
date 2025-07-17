@@ -1,5 +1,7 @@
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Callable, Awaitable
+import asyncio
+from collections import defaultdict
 
 class Document(BaseModel):
     id: str
@@ -71,3 +73,15 @@ class DatasetPairScoredPair(BaseModel):
 class DatasetPairScoredPairs(BaseModel):
     scored_pairs: list[DatasetPairScoredPair]
 
+class RerankerInput(BaseModel):
+    query: str
+    documents: list[str]
+
+class Reranker(BaseModel):
+    reranker: Callable[[RerankerInput], list[float]] | Callable[[RerankerInput], Awaitable[list[float]]]
+
+    def __call__(self, input: RerankerInput) -> list[float]:
+        if asyncio.iscoroutinefunction(self.reranker):
+            return asyncio.run(self.reranker(input))
+        else:
+            return self.reranker(input)

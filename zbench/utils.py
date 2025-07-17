@@ -285,3 +285,15 @@ def calculate_elos(
         print(f"ERROR! Not within epsilon after {len(losses)} iterations!")
 
     return elos, losses
+
+def dcg(scores: list[float]) -> float:
+    """Calculate DCG."""
+    return np.sum(scores / np.log2(np.arange(len(scores)) + 2))
+
+def ndcg(ground_truth: list[float], scores: list[float]) -> float:
+    """Calculate NDCG."""
+    assert len(ground_truth) == len(scores)
+    indices = np.argsort(scores)[::-1]
+    predicted_scores = np.array(ground_truth)[indices]
+    ideal_scores = np.array(sorted(ground_truth, reverse=True))
+    return dcg(predicted_scores) / dcg(ideal_scores)

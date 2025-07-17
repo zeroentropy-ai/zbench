@@ -16,6 +16,10 @@ from openai.types.chat import ChatCompletionMessageParam
 from openlimit.rate_limiters import RateLimiter
 from openlimit.redis_rate_limiters import RateLimiterWithRedis 
 from pydantic import BaseModel, ValidationError, computed_field
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
 
 REDIS_URL = None
 

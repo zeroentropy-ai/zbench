@@ -123,8 +123,8 @@ class DatasetAnnotator:
                     score += 1/3
                 if scored_pair.gemini_score.score > 0:
                     score += 1/3
-                w[i,j] += score
-                w[j,i] += 1 - score
+                w[j,i] += score
+                w[i,j] += 1 - score
             elos, _ = calculate_elos(w)
             annotated_dataset.data.append(AnnotatedQueryDocuments(
                 query=data.query,
