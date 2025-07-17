@@ -25,7 +25,7 @@ class DatasetAnnotator:
         # File paths
         self.dataset_path = self.working_dir / "dataset.jsonl"
         self.pairs_path = self.working_dir / "pairs.json"
-        self.ai_scores_path = self.working_dir / "ai_scores.json"
+        self.ai_scores_path = self.initial_dir / f"{self.dataset_name}_ai_scores.json"
         self.annotated_dataset_path = self.initial_dir / f"{self.dataset_name}_annotated.jsonl"
         
         # Ensure folder exists

@@ -80,3 +80,9 @@ class Reranker(BaseModel):
 
     async def __call__(self, input: RerankerInput) -> Awaitable[list[float]]:
         return await self.reranker(input)
+    
+class Accuracy(BaseModel):
+    correct: int
+    total: int
+    consensus_correct: int
+    consensus_total: int
