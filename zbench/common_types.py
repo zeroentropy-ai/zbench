@@ -1,7 +1,5 @@
 from pydantic import BaseModel
 from typing import Any, Callable, Awaitable
-import asyncio
-from collections import defaultdict
 
 class Document(BaseModel):
     id: str
