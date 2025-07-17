@@ -134,7 +134,7 @@ Generates pairwise comparisons between documents for each query using a random c
 
 **Configuration Options:**
 - `--cycle_num`: Number of random cycles for pair generation (default: 4)
-- `--document_threshold`: Maximum number of documents to use per query (default: 10). Uses the first `--document_threshold` document in the input order
+- `--document_threshold`: Maximum number of documents to use per query (default: 10). Uses the first `--document_threshold` documents in the input order
 
 ### Step 3: Score Pairs
 Uses an ensemble of three AI models to score each document pair:
@@ -212,7 +212,7 @@ zbench uses Normalized Discounted Cumulative Gain (NDCG) to evaluate reranker pe
 ```python
 from zbench.utils import ndcg
 
-# Ground truth relevance scores
+# Ground truth relevance scores = e ^ (corresponding elo)
 ground_truth = [3.2, 2.1, 1.8, 0.9]  # Higher = more relevant
 
 # Predicted relevance scores from your reranker
@@ -240,6 +240,6 @@ scores = await benchmark_reranker(
 For large datasets, consider:
 
 1. **Increase document threshold gradually**: Start with 10, increase if needed
-2. **Use fewer cycles for initial testing**: In practice, no more than 4 cycles are needed for the ELO convergence
-3. **Monitor API costs**: Each pair requires 3 AI model calls, approximated cost: 20 USD / 1000 pairwise comparisons
+2. **Use fewer cycles for initial testing**: In practice, no more than 4 cycles are needed for the ELO convergence, but you can lower to 2-3 for small document samples
+3. **Monitor API costs**: Each pair requires 3 AI model calls, approximate cost: 20 USD / 1000 pairwise comparisons
 4. **Implement checkpointing**: Save intermediate results, do not run on thousands of queries right away

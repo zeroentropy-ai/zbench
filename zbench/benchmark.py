@@ -9,11 +9,17 @@ import asyncio
 def visualize_ndcg_scores(ndcg_scores: list[float]) -> None:
     """Visualize NDCG scores as a histogram."""
     plt.figure(figsize=(10, 6))
-    plt.hist(ndcg_scores, bins=30, alpha=0.7, edgecolor='black')
+    plt.hist(ndcg_scores, bins=30, alpha=0.7, edgecolor='black', label='NDCG Scores')
+    
+    # Add mean line
+    mean_score = sum(ndcg_scores) / len(ndcg_scores)
+    plt.axvline(mean_score, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_score:.4f}')
+    
     plt.xlabel('NDCG Score')
     plt.ylabel('Frequency')
     plt.title('Distribution of NDCG Scores')
     plt.grid(True, alpha=0.3)
+    plt.legend()
     plt.show()
 
 async def benchmark_reranker(annotation_path: str, reranker: Reranker, *, visualize: bool = False) -> list[float]:
