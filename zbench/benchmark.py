@@ -1,12 +1,12 @@
-from zbench.utils import load_jsonl, ndcg, load_json
-from zbench.common_types import RerankerInput, Reranker, AnnotatedDataset, AnnotatedQueryDocuments, DatasetPairScoredPairs, Accuracy
-import math
-from zbench.rerankers import ZEROENTROPY_RERANKER, ZEROENTROPY_RERANKER_SMALL
+from zbench.utils import load_jsonl, ndcg
+from zbench.common_types import RerankerInput, BaseReranker, Dataset, QueryDocuments
+from zbench.rerankers import Zerank, EnsembleReranker
 import matplotlib.pyplot as plt
 from tqdm.asyncio import tqdm
 import asyncio
+from zbench.utils import argsort
 
-def visualize_ndcg_scores(ndcg_scores: list[float]) -> None:
+def _visualize_ndcg_scores(ndcg_scores: list[float]) -> None:
     """Visualize NDCG scores as a histogram."""
     plt.figure(figsize=(10, 6))
     plt.hist(ndcg_scores, bins=30, alpha=0.7, edgecolor='black', label='NDCG Scores')
@@ -22,49 +22,71 @@ def visualize_ndcg_scores(ndcg_scores: list[float]) -> None:
     plt.legend()
     plt.show()
 
-async def benchmark_ndcg(annotation_path: str, reranker: Reranker, *, visualize: bool = False) -> list[float]:
+async def benchmark_ndcg(dataset_path: str, reranker: BaseReranker, ground_truth_reranker: BaseReranker, *, visualize: bool = False, document_limit: int = 10) -> list[float]:
     """Benchmark a reranker on an annotated dataset."""
-    annotated_dataset = AnnotatedDataset.model_validate({"data": load_jsonl(annotation_path)})
+    dataset = Dataset.model_validate({"data": load_jsonl(dataset_path)})
 
-    async def calculate_ndcg(data: AnnotatedQueryDocuments) -> tuple[str, float]:
-        reranker_scores = await reranker(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents]))
-        ground_truth_scores = [math.exp(doc.score) for doc in data.documents]
+    async def calculate_ndcg(data: QueryDocuments) -> tuple[str, float]:
+        reranker_scores = await reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
+        ground_truth_scores = await ground_truth_reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
         return data.query.id, ndcg(ground_truth_scores, reranker_scores)
     
-    ndcg_scores : list[tuple[str, float]] = await tqdm.gather(*[calculate_ndcg(data) for data in annotated_dataset.data], desc="Calculating NDCG Scores")
+    ndcg_scores : list[tuple[str, float]] = await tqdm.gather(*[calculate_ndcg(data) for data in dataset.data], desc="Calculating NDCG Scores")
     ndcg_scores = {query_id: score for query_id, score in ndcg_scores}
-    ndcg_scores = [ndcg_scores[data.query.id] for data in annotated_dataset.data]
+    ndcg_scores = [ndcg_scores[data.query.id] for data in dataset.data]
 
     if visualize:
-        visualize_ndcg_scores(ndcg_scores=ndcg_scores)
+        _visualize_ndcg_scores(ndcg_scores=ndcg_scores)
 
     return ndcg_scores
 
-async def benchmark_accuracy(ai_scores_path: str, reranker: Reranker) -> Accuracy:
-    ai_scores = DatasetPairScoredPairs.model_validate(load_json(ai_scores_path))
-    reranker_scores : list[list[float]] = await tqdm.gather(*[reranker(RerankerInput(query=scored_pair.pair.query, documents=[scored_pair.pair.document_a.content, scored_pair.pair.document_b.content])) for scored_pair in ai_scores.scored_pairs], desc="Reranking")
-    num_correct = 0
-    num_samples = 0
-    num_consensus = 0
-    num_consensus_correct = 0
-    for scored_pair, reranker_score in zip(ai_scores.scored_pairs, reranker_scores, strict=True):
-        ai_scores = [scored_pair.openai_score.score, scored_pair.gemini_score.score, scored_pair.anthropic_score.score]
-        consensus : bool = ai_scores[0] * ai_scores[1] > 0 and ai_scores[1] * ai_scores[2] > 0
-        reranker_value = reranker_score[1] - reranker_score[0]
-        target_prefers_a : bool = reranker_value > 0
-        target_prefers_b : bool = reranker_value < 0
-        ai_value = sum([1 if x > 0 else (-1 if x < 0 else 0) for x in ai_scores])
-        pred_prefers_a : bool = ai_value > 0
-        pred_prefers_b : bool = ai_value < 0
-        if (pred_prefers_a and target_prefers_a) or (pred_prefers_b and target_prefers_b):
-            num_correct += 1
-            if consensus:
-                num_consensus_correct += 1
-        num_samples += 1
-        if consensus:
-            num_consensus += 1
-    return Accuracy(correct=num_correct, total=num_samples, consensus_correct=num_consensus_correct, consensus_total=num_consensus)
+def _accuracy(reranker_scores: list[float], ground_truth_scores: list[float]) -> float:
+    assert len(ground_truth_scores) == len(reranker_scores)
+    n = len(ground_truth_scores)
+    correct = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            reranker_value = reranker_scores[i] - reranker_scores[j]
+            ground_truth_value = ground_truth_scores[i] - ground_truth_scores[j]
+            if reranker_value * ground_truth_value > 0:
+                correct += 1
+    return (2 * correct) / (n * (n - 1))
+
+async def benchmark_accuracy(dataset_path: str, reranker: BaseReranker, ground_truth_reranker: BaseReranker, *, document_limit: int = 10) -> list[float]:
+    dataset = Dataset.model_validate({"data": load_jsonl(dataset_path)})    
+
+    async def calculate_accuracy(data: QueryDocuments) -> tuple[str, float]:
+        reranker_scores = await reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
+        ground_truth_scores = await ground_truth_reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
+        return data.query.id, _accuracy(reranker_scores, ground_truth_scores)
+
+    accuracy_scores : list[tuple[str, float]] = await tqdm.gather(*[calculate_accuracy(data) for data in dataset.data], desc="Calculating Accuracy Scores")
+    accuracy_scores = {query_id: score for query_id, score in accuracy_scores}
+    accuracy_scores = [accuracy_scores[data.query.id] for data in dataset.data]
+
+    return accuracy_scores
+
+async def recall_at_k(dataset_path: str, reranker: BaseReranker, ground_truth_reranker: BaseReranker, k: int, *, k_gt: int | None = None, document_limit: int = 10) -> list[float]:
+    dataset = Dataset.model_validate({"data": load_jsonl(dataset_path)})
+    if k_gt is None:
+        k_gt = k
+
+    async def calculate_recall(data: QueryDocuments) -> tuple[str, float]:
+        reranker_scores = await reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
+        ground_truth_scores = await ground_truth_reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
+        truth_indices = argsort(ground_truth_scores)[::-1][:k_gt]
+        reranker_indices = argsort(reranker_scores)[::-1][:k]
+        intersections = set(truth_indices) & set(reranker_indices)
+        return data.query.id, len(intersections) / k_gt
+    
+    recall_scores : list[tuple[str, float]] = await tqdm.gather(*[calculate_recall(data) for data in dataset.data], desc="Calculating Recall Scores")
+    recall_scores = {query_id: score for query_id, score in recall_scores}
+    recall_scores = [recall_scores[data.query.id] for data in dataset.data]
+    return recall_scores
 
 if __name__ == "__main__":
-    asyncio.run(benchmark_ndcg("tmp/legalquad_annotated.jsonl", ZEROENTROPY_RERANKER_SMALL, visualize=True))
-    asyncio.run(benchmark_accuracy("tmp/legalquad_ai_scores.json", ZEROENTROPY_RERANKER_SMALL))
+    zerank = Zerank("zerank-1")
+    reranker = EnsembleReranker("tmp/legalquad_annotated.jsonl")
+    asyncio.run(benchmark_ndcg("tmp/legalquad.jsonl", zerank, reranker, visualize=True))
+    asyncio.run(benchmark_accuracy("tmp/legalquad.jsonl", zerank, reranker))
+    asyncio.run(recall_at_k("tmp/legalquad.jsonl", zerank, reranker, 10, k_gt=10))

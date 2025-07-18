@@ -1,5 +1,6 @@
 from pydantic import BaseModel
-from typing import Any, Callable, Awaitable
+from typing import Any
+from abc import ABC, abstractmethod
 
 class Document(BaseModel):
     id: str
@@ -75,14 +76,7 @@ class RerankerInput(BaseModel):
     query: str
     documents: list[str]
 
-class Reranker(BaseModel):
-    reranker: Callable[[RerankerInput], Awaitable[list[float]]]
-
-    async def __call__(self, input: RerankerInput) -> Awaitable[list[float]]:
-        return await self.reranker(input)
-    
-class Accuracy(BaseModel):
-    correct: int
-    total: int
-    consensus_correct: int
-    consensus_total: int
+class BaseReranker(ABC):
+    @abstractmethod
+    async def score(self, input: RerankerInput) -> list[float]:
+        pass
