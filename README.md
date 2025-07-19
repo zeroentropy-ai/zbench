@@ -33,16 +33,22 @@ python zbench.annotation path/to/your/dataset.jsonl
 
 ```python
 import asyncio
-from zbench.benchmark import benchmark_reranker
-from zbench.rerankers import ZEROENTROPY_RERANKER
+from zbench.benchmark import benchmark_ndcg, benchmark_accuracy, recall_at_k
+from zbench.rerankers import Zerank, EnsembleReranker
 
 async def main():
-    scores = await benchmark_reranker(
-        "path/to/annotated_dataset.jsonl", 
-        ZEROENTROPY_RERANKER,
-        visualize=True
-    )
-    print(f"Average NDCG: {sum(scores) / len(scores):.4f}")
+    # Create rerankers
+    test_reranker = Zerank("zerank-1")
+    ground_truth = EnsembleReranker("dataset_annotated.jsonl")
+    
+    # Benchmark with multiple metrics
+    ndcg_scores = await benchmark_ndcg("dataset.jsonl", test_reranker, ground_truth, visualize=True)
+    accuracy_scores = await benchmark_accuracy("dataset.jsonl", test_reranker, ground_truth)
+    recall_scores = await recall_at_k("dataset.jsonl", test_reranker, ground_truth, k=5)
+    
+    print(f"Average NDCG: {sum(ndcg_scores) / len(ndcg_scores):.4f}")
+    print(f"Average Accuracy: {sum(accuracy_scores) / len(accuracy_scores):.4f}")
+    print(f"Average Recall@5: {sum(recall_scores) / len(recall_scores):.4f}")
 
 asyncio.run(main())
 ```
@@ -155,72 +161,95 @@ Converts pairwise scores into ELO ratings using an algorithm from https://hackmd
 
 ### Defining a Custom Reranker
 
-A reranker is a `zbench.common_types.Reranker` class that contains an async function that takes `zbench.common_types.RerankerInput` (a query and list of documents) and returns relevance scores for all of them:
+Create a custom reranker by inheriting from `BaseReranker`:
 
 ```python
-from zbench.common_types import Reranker, RerankerInput
+from zbench.common_types import BaseReranker, RerankerInput
 
-async def my_custom_reranker(input: RerankerInput) -> list[float]:
-    """
-    Custom reranker implementation.
-    
-    Args:
-        input: Contains query (str) and documents (list[str])
+class MyCustomReranker(BaseReranker):
+    async def score(self, input: RerankerInput) -> list[float]:
+        """
+        Custom reranker implementation.
         
-    Returns:
-        List of relevance scores (higher = more relevant)
-    """
-    query = input.query
-    documents = input.documents
-    
-    # Your reranking logic here
-    scores = []
-    for doc in documents:
-        # Example: simple keyword matching
-        score = sum(1 for word in query.lower().split() 
-                   if word in doc.lower())
-        scores.append(float(score))
-    
-    return scores
+        Args:
+            input: Contains query (str) and documents (list[str])
+            
+        Returns:
+            List of relevance scores (higher = more relevant)
+        """
+        query = input.query
+        documents = input.documents
+        
+        # Your reranking logic here
+        scores = []
+        for doc in documents:
+            # Example: simple keyword matching
+            score = sum(1 for word in query.lower().split() 
+                       if word in doc.lower())
+            scores.append(float(score))
+        
+        return scores
 
-# Wrap your function in a Reranker object
-MY_RERANKER : Reranker = Reranker(reranker=my_custom_reranker)
+# Use your custom reranker
+my_reranker = MyCustomReranker()
 ```
 
 Note: Custom rerankers are called simultaneously for every query, so make sure to utilize `asyncio.Semaphore` to avoid ratelimit issues.
 
-### ZeroEntropy Rerankers
+### Built-in Rerankers
 
-zbench includes built-in ZeroEntropy rerankers:
+#### Zerank (ZeroEntropy)
+```python
+from zbench.rerankers import Zerank
+
+# Available models: "zerank-1", "zerank-1-small"
+zerank = Zerank("zerank-1")
+zerank_small = Zerank("zerank-1-small")
+```
+
+#### EnsembleReranker (Ground Truth)
+Creates a reranker from annotated datasets for evaluation:
 
 ```python
-from zbench.rerankers import ZEROENTROPY_RERANKER, ZEROENTROPY_RERANKER_SMALL
+from zbench.rerankers import EnsembleReranker
 
-# Use the full model
-scores = await benchmark_reranker("dataset.jsonl", ZEROENTROPY_RERANKER)
-
-# Use the small model
-scores = await benchmark_reranker("dataset.jsonl", ZEROENTROPY_RERANKER_SMALL)
+# Use annotated dataset as ground truth
+ground_truth = EnsembleReranker("dataset_annotated.jsonl")
 ```
 
 ## Evaluation and Benchmarking
 
-### NDCG Calculation
+zbench provides three evaluation metrics for comprehensive reranker assessment:
 
-zbench uses Normalized Discounted Cumulative Gain (NDCG) to evaluate reranker performance:
+### 1. NDCG (Normalized Discounted Cumulative Gain)
+Measures ranking quality with position-aware scoring:
 
 ```python
-from zbench.utils import ndcg
+# Use with benchmarking functions
+ndcg_scores = await benchmark_ndcg("dataset.jsonl", test_reranker, ground_truth_reranker)
+```
 
-# Ground truth relevance scores = e ^ (corresponding elo)
-ground_truth = [3.2, 2.1, 1.8, 0.9]  # Higher = more relevant
+### 2. Pairwise Accuracy
+Measures how often the reranker correctly orders document pairs compared to ground truth:
 
-# Predicted relevance scores from your reranker
-predictions = [2.8, 2.3, 1.2, 1.0]
+```python
+accuracy_scores = await benchmark_accuracy("dataset.jsonl", test_reranker, ground_truth_reranker)
+```
 
-# Calculate NDCG
-score = ndcg(ground_truth, predictions)
-print(f"NDCG: {score:.4f}")
+### 3. Recall@K  
+Measures how many of the top-K ground truth documents appear in the reranker's top-Kgt (default is k_gt = k) results:
+
+```python
+recall_scores = await recall_at_k("dataset.jsonl", test_reranker, ground_truth_reranker, k=5, k_gt = 5)
+```
+
+### Performance Options
+
+All benchmark functions support a `document_limit` parameter to process only the first N documents per query for faster evaluation:
+
+```python
+# Process only first 5 documents per query
+ndcg_scores = await benchmark_ndcg("dataset.jsonl", test_reranker, ground_truth, document_limit=5)
 ```
 
 ### Visualization
