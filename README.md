@@ -237,7 +237,7 @@ accuracy_scores = await benchmark_accuracy("dataset.jsonl", test_reranker, groun
 ```
 
 ### 3. Recall@K  
-Measures how many of the top-K ground truth documents appear in the reranker's top-Kgt (default is k_gt = k) results:
+Measures what percent of the top-K_gt ground truth documents appear in the reranker's top-K (default value of k_gt = k) results:
 
 ```python
 recall_scores = await recall_at_k("dataset.jsonl", test_reranker, ground_truth_reranker, k=5, k_gt = 5)
