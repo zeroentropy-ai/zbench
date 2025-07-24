@@ -52,6 +52,8 @@ ZEROENTROPY_API_KEY=your_zeroentropy_api_key # This API Key is optional, but can
 
 ## Quick Start
 
+The best way to start is by working through [example.ipynb](example.ipynb) using Jupyter or VSCode. The notebook will walk you through the calling zELO annotator, along with benchmarking a retrieval system and graphing NDCG and printing Recall. The individual steps will also be written here:
+
 ### 1. Annotate a Dataset
 
 ```bash
