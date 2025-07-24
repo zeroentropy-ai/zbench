@@ -1,6 +1,6 @@
 from zbench.utils import load_jsonl, ndcg
 from zbench.common_types import RerankerInput, BaseReranker, Dataset, QueryDocuments, AnnotatedDataset, AnnotatedQueryDocuments
-from zbench.rerankers import Zerank, EnsembleReranker
+from zbench.rerankers import Zerank
 import matplotlib.pyplot as plt
 from tqdm.asyncio import tqdm
 import asyncio
@@ -17,6 +17,7 @@ def _visualize_ndcg_scores(ndcg_scores: list[float]) -> None:
     mean_score = sum(ndcg_scores) / len(ndcg_scores)
     plt.axvline(mean_score, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_score:.4f}')
     
+    plt.xlim(0, 1)
     plt.xlabel('NDCG Score')
     plt.ylabel('Frequency')
     plt.title('Distribution of NDCG Scores')

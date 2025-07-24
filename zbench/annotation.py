@@ -13,8 +13,8 @@ from zbench.utils import (
 from zbench.common_types import DatasetPairs, DatasetPair, Dataset, AnnotatedDataset, AnnotatedQueryDocuments, AnnotatedDocument, DatasetPairScoredPairs, DatasetPairDocument
 from zbench.score import Score
 
-class EnsembleELOAnnotator:
-    def __init__(self, dataset_path: str, annotated_dataset_path: str, *, cycle_num: int = 4, document_limit: int = 10):
+class EnsembleZELOAnnotator:
+    def __init__(self, dataset_path: str, annotated_dataset_path: str, *, cycle_num: int = 4, document_limit: int | None = None):
         self.initial_path = Path(dataset_path)
         self.dataset_name = self.initial_path.stem
         self.working_dir = Path(f"data/annotation/{self.dataset_name}")
@@ -57,7 +57,9 @@ class EnsembleELOAnnotator:
         for data in tqdm(dataset.data, desc="Creating pairs"):
             query = data.query
             documents = data.documents
-            n = min(self.document_limit, len(data.documents))
+            n = len(data.documents)
+            if self.document_limit is not None:
+                n = min(n, self.document_limit)
             for _ in range(self.cycle_num):
                 indices = self.get_random_cycle_pairs(n)
                 for i, j in indices:
@@ -142,7 +144,7 @@ class EnsembleELOAnnotator:
 
         print(f"Saved annotated dataset to {self.annotated_dataset_path}")
     
-    async def elo_annotate(self) -> None:
+    async def zelo_annotate(self) -> None:
         """Run the complete pipeline."""
     
         try:
@@ -169,17 +171,19 @@ class EnsembleELOAnnotator:
 async def main():
     parser = argparse.ArgumentParser(description="Annotate dataset")
     parser.add_argument("dataset_path", help="Path to the dataset jsonl file")
+    parser.add_argument("annotated_dataset_path", help="Path to the dataset jsonl file")
     parser.add_argument("--cycle_num", type=int, default=4, help="Number of cycles to run")
-    parser.add_argument("--document_limit", type=int, default=10, help="Number of documents to use for scoring")
+    parser.add_argument("--document_limit", type=int, default=None, help="Number of documents to use for scoring")
     args = parser.parse_args()
     
-    processor = EnsembleELOAnnotator(
+    processor = EnsembleZELOAnnotator(
         dataset_path=args.dataset_path,
+        annotated_dataset_path=args.annotated_dataset_path,
         cycle_num=args.cycle_num,
         document_limit=args.document_limit,
     )
     
-    await processor.elo_annotate()
+    await processor.zelo_annotate()
 
 
 if __name__ == "__main__":

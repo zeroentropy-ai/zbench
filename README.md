@@ -1,6 +1,6 @@
 # zbench
 
-> zELO Method: For a given query and K candidate documents, using an Ensemble of large LLMs to annotate pairwise "battles" between candidate documents. Then, calculating ELO scores for all of the documents.
+> **zELO Method**: For a given query and K candidate documents, use an Ensemble of large LLMs to annotate pairwise "battles" between candidate documents. Then, calculate ELO scores for all of the documents via [bradley-terry](https://en.wikipedia.org/wiki/Bradley%E2%80%93Terry_model). We call this final score a **zELO score**.
 
 **zbench** is a comprehensive platform for annotating query-to-document relevancy and backtesting performance of custom rerankers and initial retrieval methods. It uses an ensemble of state-of-the-art LLM models to generate high-quality annotations using the **zELO** rating system, and provides tools for evaluating retriever performance using NDCG and recall metrics.
 
@@ -23,15 +23,15 @@ By taking LLM-annotated pairwise comparisons, where red is a negative number and
 
 > Graphs showing pairwise comparisons. The color at (i, j) / (j, i) is based on inferencing the Ensemble of LLMs for d_i and d_j. The first matrix is when the indices are sorted by hybrid search. Horizontal lines of strong red indicate bad documents, horizontal lines of strong green indicate good documents. When we sort by zELO, we get an almost perfect triangular matrix.
 
-The strong self-consistency of the matrix when sorting by ELO scores indicates the strength of this method. However, this would take O(N^2) Inferences to populate this matrix. Instead, we can employ an optimized sparse sampling strategy that only samples each document at most 4 times, while still recovering precise zELOs that are within a small error from the zELO induced by the dense matrix.
+The strong self-consistency of the matrix when sorting by ELO scores indicates the strength of this method. However, this would take O(N^2) Inferences to populate this matrix. Instead, we can employ an optimized sparse sampling strategy that only inferences the ensemble 4 times per document, while still recovering precise zELOs that are within a small error from the zELO induced by the dense matrix.
 
 <img width="677" height="288" alt="image" src="https://github.com/user-attachments/assets/4731f849-e81f-40bd-a211-fd6f273f1f84" />
 
 These zELO scores provide an extremely strong indicator of underlying relevancy, rivaling human annotations in many of our internal ablations, while being orders of magnitude cheaper.
 
-> This method is expected to cost ~$20 / 1000 inferences. And, we inference 4 times per query-document pair. For example, 100 queries with K=25, would cost 100 * 25 * 4 * $20 / 1000 = $200 in calls to OpenAI/Anthropic/Gemini.
+> This method is expected to cost ~$20 / 1000 inferences. And, we inference 4 times per query-document pair. For example, 100 queries with K=25, would cost 100 * 25 * 4 * $20 / 1000 = $200 in calls to OpenAI/Anthropic/Gemini. Note that since each inference involves two documents, each document is involved in ~8 pairwise comparisons.
 
-Additionally, it's highly interpretable. When analyzing the results, you can pick a particular document, and then print out the ~4 pairwise comparisons that involved that document, in order to analyze the ensemble's annotations manually. This can done to understand failure modes of your existing retrieval system. Or, if you disagree with the annotations, it can be used to drive any custom prompt engineering of the Ensemble.
+Additionally, it's highly interpretable. When analyzing the results, you can pick a particular document, and then print out the ~8 pairwise comparisons that involved that document, in order to analyze the ensemble's annotations manually. This can done to understand failure modes of your existing retrieval system. Or, if you disagree with the annotations, it can be used to drive any custom prompt engineering of the Ensemble.
 
 ## Setup
 
@@ -47,6 +47,7 @@ For annotation purposes, zbench is going to call an ensemble of OpenAI GPT-4, An
 OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 GEMINI_API_KEY=your_gemini_api_key
+ZEROENTROPY_API_KEY=your_zeroentropy_api_key # This API Key is optional, but can be used to test ZeroEntropy's retrieval system and reranker models.
 ```
 
 ## Quick Start
@@ -54,7 +55,8 @@ GEMINI_API_KEY=your_gemini_api_key
 ### 1. Annotate a Dataset
 
 ```bash
-python zbench.annotation path/to/your/dataset.jsonl
+# Will read from your_dataset.jsonl, and then write the zELO-scored documents to data/your_dataset_zelo_annotated.jsonl
+python zbench.annotation data/your_dataset.jsonl data/your_dataset_zelo_annotated.jsonl
 ```
 
 ### 2. Benchmark a Reranker
@@ -62,17 +64,21 @@ python zbench.annotation path/to/your/dataset.jsonl
 ```python
 import asyncio
 from zbench.benchmark import benchmark_ndcg, benchmark_accuracy, recall_at_k
-from zbench.rerankers import Zerank, EnsembleReranker
+from zbench.rerankers import Zerank
 
 async def main():
-    # Create rerankers
+    # The zELO-annotated documents to use as ground truth
+    ZELO_ANNOTATED_DATASET_PATH = "./data/my_sample_dataset_zelo_annotated.jsonl"
+
+    # Use zerank to annotated the dataset
+    ZERANK_ANNOTATED_DATASET_PATH = "./data/my_sample_dataset_zerank_annotated.jsonl"
     test_reranker = Zerank("zerank-1")
-    ground_truth = EnsembleReranker("dataset_annotated.jsonl")
+    await test_reranker.annotate(ZELO_ANNOTATED_DATASET_PATH, ZERANK_ANNOTATED_DATASET_PATH)
     
     # Benchmark with multiple metrics
-    ndcg_scores = await benchmark_ndcg("dataset.jsonl", test_reranker, ground_truth, visualize=True)
-    accuracy_scores = await benchmark_accuracy("dataset.jsonl", test_reranker, ground_truth)
-    recall_scores = await recall_at_k("dataset.jsonl", test_reranker, ground_truth, k=5)
+    ndcg_scores = benchmark_ndcg(ZELO_ANNOTATED_DATASET_PATH, ZERANK_ANNOTATED_DATASET_PATH, visualize=True)
+    accuracy_scores = benchmark_accuracy(ZELO_ANNOTATED_DATASET_PATH, ZERANK_ANNOTATED_DATASET_PATH, ground_truth)
+    recall_scores = recall_at_k(ZELO_ANNOTATED_DATASET_PATH, ZERANK_ANNOTATED_DATASET_PATH, ground_truth, k=5)
     
     print(f"Average NDCG: {sum(ndcg_scores) / len(ndcg_scores):.4f}")
     print(f"Average Accuracy: {sum(accuracy_scores) / len(accuracy_scores):.4f}")
@@ -122,7 +128,7 @@ Your input dataset should be a JSONL file where each line is in `zbench.common_t
 
 ### Annotated Dataset Format
 
-The annotation process produces a JSONL file named the same way as an input but with "_annotated" suffix. Each line contains scored documents in the format of `zbench.common_types.AnnotatedQueryDocuments`:
+The annotation process produces a JSONL file named the same way as an input but is commonly stored with an "_annotated" suffix. Each line contains scored documents in the format of `zbench.common_types.AnnotatedQueryDocuments`:
 
 ```json
 {
@@ -168,7 +174,7 @@ Generates pairwise comparisons between documents for each query using a random c
 
 **Configuration Options:**
 - `--cycle_num`: Number of random cycles for pair generation (default: 4)
-- `--document_threshold`: Maximum number of documents to use per query (default: 10). Uses the first `--document_threshold` documents in the input order
+- `--document_threshold`: Maximum number of documents to use per query (default: No Limit). Restricts reranking to the first `--document_threshold` documents in the input order
 
 ### Step 3: Score Pairs
 Uses an ensemble of three AI models to score each document pair:
@@ -235,40 +241,30 @@ zerank = Zerank("zerank-1")
 zerank_small = Zerank("zerank-1-small")
 ```
 
-#### EnsembleReranker (Ground Truth)
-Creates a reranker from annotated datasets for evaluation:
-
-```python
-from zbench.rerankers import EnsembleReranker
-
-# Use annotated dataset as ground truth
-ground_truth = EnsembleReranker("dataset_annotated.jsonl")
-```
-
 ## Evaluation and Benchmarking
 
-zbench provides three evaluation metrics for comprehensive reranker assessment:
+zbench provides three evaluation metrics for comprehensive reranker assessment. The first argument is the ground truth, and the second argument is the alternative retrieval system to analayze. The ground truth can be human-annotated binary scores, or it can be Ensemble-annotated zELO scores. Both arguments must be a `AnnotatedQueryDocuments` jsonl file.
 
 ### 1. NDCG (Normalized Discounted Cumulative Gain)
 Measures ranking quality with position-aware scoring:
 
 ```python
 # Use with benchmarking functions
-ndcg_scores = await benchmark_ndcg("dataset.jsonl", test_reranker, ground_truth_reranker)
+ndcg_scores = benchmark_ndcg("dataset_groundtruth.jsonl", "dataset_alternative.jsonl")
 ```
 
 ### 2. Pairwise Accuracy
 Measures how often the reranker correctly orders document pairs compared to ground truth:
 
 ```python
-accuracy_scores = await benchmark_accuracy("dataset.jsonl", test_reranker, ground_truth_reranker)
+accuracy_scores = benchmark_accuracy("dataset_groundtruth.jsonl", "dataset_alternative.jsonl")
 ```
 
 ### 3. Recall@K  
 Measures what percent of the top-K_gt ground truth documents appear in the reranker's top-K (default value of k_gt = k) results:
 
 ```python
-recall_scores = await recall_at_k("dataset.jsonl", test_reranker, ground_truth_reranker, k=5, k_gt = 5)
+recall_scores = recall_at_k("dataset_groundtruth.jsonl", "dataset_alternative.jsonl", k=5, k_gt = 5)
 ```
 
 ### Performance Options
@@ -277,7 +273,7 @@ All benchmark functions support a `document_limit` parameter to process only the
 
 ```python
 # Process only first 5 documents per query
-ndcg_scores = await benchmark_ndcg("dataset.jsonl", test_reranker, ground_truth, document_limit=5)
+ndcg_scores = benchmark_ndcg("dataset.jsonl", test_reranker, ground_truth, document_limit=5)
 ```
 
 ### Visualization
@@ -285,18 +281,18 @@ ndcg_scores = await benchmark_ndcg("dataset.jsonl", test_reranker, ground_truth,
 Enable visualization to see NDCG score distributions:
 
 ```python
-scores = await benchmark_reranker(
+scores = benchmark_reranker(
     "annotated_dataset.jsonl", 
     MY_RERANKER,
-    visualize=True  # Shows histogram of NDCG scores
+    visualize=True,  # Shows histogram of NDCG scores
 )
 ```
 
 ### Working with Large Datasets
 
-For large datasets, consider:
+For large datasets, we recommend:
 
 1. **Increase document threshold gradually**: Start with 10, increase if needed
 2. **Use fewer cycles for initial testing**: In practice, no more than 4 cycles are needed for the ELO convergence, but you can lower to 2-3 for small document samples
-3. **Monitor API costs**: Each pair requires 3 AI model calls, approximate cost: 20 USD / 1000 pairwise comparisons
-4. **Implement checkpointing**: Save intermediate results, do not run on thousands of queries right away
+3. **Monitor API costs**: Each pair requires 3 AI model calls, costing approximately: $20 USD / 1000 pairwise comparisons
+4. **Implement checkpointing**: Save intermediate results, do not run on thousands of queries right away. Instead, scale each run by powers of ten and check evaluations and chain of thought at each step to ensure it's working as you intend.
