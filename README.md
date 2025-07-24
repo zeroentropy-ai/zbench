@@ -25,17 +25,19 @@ By taking LLM-annotated pairwise comparisons, where red is a negative number and
 
 The strong self-consistency of the matrix when sorting by ELO scores indicates the strength of this method. However, this would take O(N^2) Inferences to populate this matrix. Instead, we can employ an optimized sparse sampling strategy that only samples each document at most 4 times, while still recovering precise zELOs that are within a small error from the zELO induced by the dense matrix.
 
-<img width="679.5" height="292.75" alt="image" src="https://github.com/user-attachments/assets/c7055b84-c44c-4fd2-a0c6-2e427a431876" />
+<img width="677" height="288" alt="image" src="https://github.com/user-attachments/assets/4731f849-e81f-40bd-a211-fd6f273f1f84" />
 
-These zELO scores provide an extremely strong indicator of underlying relevancy, rivaling human annotations in many of our internal ablations, while being orders of magnitude cheaper. This method is expected to cost ~$20 / 1000 inferences. And, we inference 4 times per query-document pair. For example, 100 queries with K=25, would cost 100 * 25 * 4 * $20 / 1000 = $200 in calls to OpenAI/Anthropic/Gemini.
+These zELO scores provide an extremely strong indicator of underlying relevancy, rivaling human annotations in many of our internal ablations, while being orders of magnitude cheaper.
 
-Additionally, when analyzing the results, you can pick a particular document, and then print out the ~4 pairwise comparisons that involved that document, in order to analyze the ensemble's annotations manually. This can done to understand failure modes of your existing retrieval system. Or, if you disagree with the annotations, it can be used to drive any custom prompt engineering of the Ensemble.
+> This method is expected to cost ~$20 / 1000 inferences. And, we inference 4 times per query-document pair. For example, 100 queries with K=25, would cost 100 * 25 * 4 * $20 / 1000 = $200 in calls to OpenAI/Anthropic/Gemini.
+
+Additionally, it's highly interpretable. When analyzing the results, you can pick a particular document, and then print out the ~4 pairwise comparisons that involved that document, in order to analyze the ensemble's annotations manually. This can done to understand failure modes of your existing retrieval system. Or, if you disagree with the annotations, it can be used to drive any custom prompt engineering of the Ensemble.
 
 ## Setup
 
 First, you'll want to setup the python dependencies.
 
-- Install [Astral UV](https://docs.astral.sh/uv/getting-started/installation/) for venv management
+- Install [Astral UV](https://docs.astral.sh/uv/getting-started/installation/) for virtual environment management.
 - Run `uv sync` in order to initialize the virtual environment.
 - Run `source .venv/bin/activate` in order to source the virtual environment, which will let you run future python commands.
 
