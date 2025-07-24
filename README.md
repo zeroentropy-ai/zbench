@@ -1,15 +1,43 @@
 # zbench
 
-**zbench** is a comprehensive platform for annotating query-to-document relevancy and backtesting performance of custom rerankers. It uses an ensemble of state-of-the-art LLM models to generate high-quality annotations using ELO-like rating system and provides tools for evaluating reranker performance using NDCG metric.
+> zELO Method: For a given query and K candidate documents, using an Ensemble of large LLMs to annotate pairwise "battles" between candidate documents. Then, calculating ELO scores for all of the documents.
+
+**zbench** is a comprehensive platform for annotating query-to-document relevancy and backtesting performance of custom rerankers and initial retrieval methods. It uses an ensemble of state-of-the-art LLM models to generate high-quality annotations using the **zELO** rating system, and provides tools for evaluating retriever performance using NDCG and recall metrics.
 
 ## Features
 
 - **AI-Powered Annotation**: Uses ensemble scoring with OpenAI GPT-4, Anthropic Claude, and Google Gemini models
-- **Pairwise Comparison**: Generates pairwise document-to-document comparisons and converts them to ELO ratings
+- **Pairwise Comparison**: Generates pairwise document-to-document comparisons and converts them to zELO ratings
 - **Custom Reranker Support**: Easy integration of custom rerankers for benchmarking
 - **Comprehensive Evaluation**: NDCG scoring and visualization tools
 
-### Environment Setup
+## Thesis
+
+When a single LLM is given a pair of documents d1, d2, and is given the task of deciding which document is more relevant to a query q, we can prompt engineer the LLM until we find a fairly uniform distribution between -1 and 1 (Where -1 indicates a preference of d1, and 1 indicates a preference of d2). However, often a single LLM is quite noisy, and an annotation of -1 or 1 isn't a strong indication by itself.
+
+However - when we inference three LLMs, _consensus_ between the LLMs becomes an extremely strong indicator of fundamental relevancy. In-fact, when we ran numerous double-blind annotations, LLM consensus is associated with a >97% probability that trusted high-quality human annotators would prefer that document as well. Most retrieval systems only align 60-70% of the time, showing a large gap between existing retrieval systems and high-quality human annotations.
+
+By taking LLM-annotated pairwise comparisons, where red is a negative number and green is a positive number, we can plot the full KxK matrix of comparisons.
+
+<img width="734" height="259" alt="The pairwise comparison matrix, and distribution of ELO scores" src="https://github.com/user-attachments/assets/12717699-2fda-4676-be75-2aa089cac3c0" />
+
+> Graphs showing pairwise comparisons. The color at (i, j) / (j, i) is based on inferencing the Ensemble of LLMs for d_i and d_j. The first matrix is when the indices are sorted by hybrid search. Horizontal lines of strong red indicate bad documents, horizontal lines of strong green indicate good documents. When we sort by zELO, we get an almost perfect triangular matrix.
+
+The strong self-consistency of the matrix when sorting by ELO scores indicates the strength of this method. However, this would take O(N^2) Inferences to populate this matrix. Instead, we can employ an optimized sparse sampling strategy that only samples each document at most 4 times, while still recovering precise zELOs that are within a small error from the zELO induced by the dense matrix.
+
+<img width="679.5" height="292.75" alt="image" src="https://github.com/user-attachments/assets/c7055b84-c44c-4fd2-a0c6-2e427a431876" />
+
+These zELO scores provide an extremely strong indicator of underlying relevancy, rivaling human annotations in many of our internal ablations, while being orders of magnitude cheaper. This method is expected to cost ~$20 / 1000 inferences. And, we inference 4 times per query-document pair. For example, 100 queries with K=25, would cost 100 * 25 * 4 * $20 / 1000 = $200 in calls to OpenAI/Anthropic/Gemini.
+
+Additionally, when analyzing the results, you can pick a particular document, and then print out the ~4 pairwise comparisons that involved that document, in order to analyze the ensemble's annotations manually. This can done to understand failure modes of your existing retrieval system. Or, if you disagree with the annotations, it can be used to drive any custom prompt engineering of the Ensemble.
+
+## Setup
+
+First, you'll want to setup the python dependencies.
+
+- Install [Astral UV](https://docs.astral.sh/uv/getting-started/installation/) for venv management
+- Run `uv sync` in order to initialize the virtual environment.
+- Run `source .venv/bin/activate` in order to source the virtual environment, which will let you run future python commands.
 
 For annotation purposes, zbench is going to call an ensemble of OpenAI GPT-4, Anthropic Claude, and Google Gemini. To make this work, create a `.env` file in the root directory with your API keys:
 
@@ -18,8 +46,6 @@ OPENAI_API_KEY=your_openai_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 GEMINI_API_KEY=your_gemini_api_key
 ```
-
-Approximate price of annotation: 20 USD / 1000 pairwise comparisons (Note: one query annotation takes around `(cycle_num) * (number of documents for the query)` comparisons)
 
 ## Quick Start
 
