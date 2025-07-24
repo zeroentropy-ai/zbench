@@ -5,12 +5,12 @@ from abc import ABC, abstractmethod
 class Document(BaseModel):
     id: str
     content: str
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = {}
 
 class AnnotatedDocument(BaseModel):
     id: str
     content: str
-    metadata: dict[str, Any]
+    metadata: dict[str, Any] = {}
     score: float
 
 class Query(BaseModel):
