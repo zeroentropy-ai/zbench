@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from tqdm.asyncio import tqdm
 import asyncio
 from zbench.utils import argsort
+import math
 
 def _visualize_ndcg_scores(ndcg_scores: list[float]) -> None:
     """Visualize NDCG scores as a histogram."""
@@ -29,6 +30,7 @@ async def benchmark_ndcg(dataset_path: str, reranker: BaseReranker, ground_truth
     async def calculate_ndcg(data: QueryDocuments) -> tuple[str, float]:
         reranker_scores = await reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
         ground_truth_scores = await ground_truth_reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
+        ground_truth_scores = [math.exp(score) for score in ground_truth_scores]
         return data.query.id, ndcg(ground_truth_scores, reranker_scores)
     
     ndcg_scores : list[tuple[str, float]] = await tqdm.gather(*[calculate_ndcg(data) for data in dataset.data], desc="Calculating NDCG Scores")

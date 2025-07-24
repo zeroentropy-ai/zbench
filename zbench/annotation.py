@@ -142,7 +142,7 @@ class DatasetAnnotator:
 
         print(f"Saved annotated dataset to {self.annotated_dataset_path}")
     
-    async def run_full_pipeline(self) -> None:
+    async def annotate(self) -> None:
         """Run the complete pipeline."""
     
         try:
@@ -179,7 +179,7 @@ async def main():
         document_limit=args.document_limit,
     )
     
-    await processor.run_full_pipeline()
+    await processor.annotate()
 
 
 if __name__ == "__main__":
