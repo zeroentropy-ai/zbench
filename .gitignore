@@ -17,3 +17,4 @@ logs/
 tmp
 data
 .env
+!data/legalquad.jsonl

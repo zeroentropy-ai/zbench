@@ -1,9 +1,10 @@
 from zbench.utils import load_jsonl, ndcg
-from zbench.common_types import RerankerInput, BaseReranker, Dataset, QueryDocuments
+from zbench.common_types import RerankerInput, BaseReranker, Dataset, QueryDocuments, AnnotatedDataset, AnnotatedQueryDocuments
 from zbench.rerankers import Zerank, EnsembleReranker
 import matplotlib.pyplot as plt
 from tqdm.asyncio import tqdm
 import asyncio
+import math
 from zbench.utils import argsort
 import math
 
@@ -23,19 +24,51 @@ def _visualize_ndcg_scores(ndcg_scores: list[float]) -> None:
     plt.legend()
     plt.show()
 
-async def benchmark_ndcg(dataset_path: str, reranker: BaseReranker, ground_truth_reranker: BaseReranker, *, visualize: bool = False, document_limit: int = 10) -> list[float]:
-    """Benchmark a reranker on an annotated dataset."""
-    dataset = Dataset.model_validate({"data": load_jsonl(dataset_path)})
+# "score", 
+# benchmark_ndcg(original_dataset_path: str, ground_truth_dataset_path: str)
 
-    async def calculate_ndcg(data: QueryDocuments) -> tuple[str, float]:
-        reranker_scores = await reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
-        ground_truth_scores = await ground_truth_reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
-        ground_truth_scores = [math.exp(score) for score in ground_truth_scores]
-        return data.query.id, ndcg(ground_truth_scores, reranker_scores)
+def benchmark_ndcg(test_dataset_path: str, ground_truth_path: str, *, visualize: bool = False, document_limit: int = 10) -> list[float]:
+    """Benchmark annotated dataset against ground truth annotated dataset using NDCG."""
+    test_dataset = AnnotatedDataset.model_validate({"data": load_jsonl(test_dataset_path)})
+    ground_truth_dataset = AnnotatedDataset.model_validate({"data": load_jsonl(ground_truth_path)})
     
-    ndcg_scores : list[tuple[str, float]] = await tqdm.gather(*[calculate_ndcg(data) for data in dataset.data], desc="Calculating NDCG Scores")
-    ndcg_scores = {query_id: score for query_id, score in ndcg_scores}
-    ndcg_scores = [ndcg_scores[data.query.id] for data in dataset.data]
+    # Create mappings for both datasets by query ID and document ID
+    test_scores = {}
+    for test_data in test_dataset.data:
+        test_scores[test_data.query.id] = {doc.id: doc.score for doc in test_data.documents}
+        
+    gt_scores = {}
+    for gt_data in ground_truth_dataset.data:
+        gt_scores[gt_data.query.id] = {doc.id: doc.score for doc in gt_data.documents}
+
+    def calculate_ndcg(test_data) -> tuple[str, float]:
+        query_id = test_data.query.id
+        if query_id not in gt_scores:
+            raise ValueError(f"Query ID {query_id} not found in ground truth dataset")
+        
+        # Limit documents if specified
+        documents = test_data.documents[:document_limit] if document_limit else test_data.documents
+        
+        # Get test scores and ground truth scores, ensuring document ID matching
+        test_doc_scores = []
+        ground_truth_doc_scores = []
+        
+        for doc in documents:
+            if doc.id not in gt_scores[query_id]:
+                raise ValueError(f"Document ID {doc.id} not found for query {query_id} in ground truth dataset")
+            if doc.id not in test_scores[query_id]:
+                raise ValueError(f"Document ID {doc.id} not found for query {query_id} in test dataset")
+                
+            test_doc_scores.append(test_scores[query_id][doc.id])
+            ground_truth_doc_scores.append(gt_scores[query_id][doc.id])
+        
+        # Convert ELO scores to relevance scores
+        ground_truth_doc_scores = [math.exp(score) for score in ground_truth_doc_scores]
+        
+        return query_id, ndcg(ground_truth_doc_scores, test_doc_scores)
+    
+    ndcg_results = [calculate_ndcg(data) for data in test_dataset.data]
+    ndcg_scores = [score for _, score in ndcg_results]
 
     if visualize:
         _visualize_ndcg_scores(ndcg_scores=ndcg_scores)
@@ -54,41 +87,96 @@ def _accuracy(reranker_scores: list[float], ground_truth_scores: list[float]) ->
                 correct += 1
     return (2 * correct) / (n * (n - 1))
 
-async def benchmark_accuracy(dataset_path: str, reranker: BaseReranker, ground_truth_reranker: BaseReranker, *, document_limit: int = 10) -> list[float]:
-    dataset = Dataset.model_validate({"data": load_jsonl(dataset_path)})    
+def benchmark_accuracy(test_dataset_path: str, ground_truth_path: str, *, document_limit: int = 10) -> list[float]:
+    """Benchmark annotated dataset accuracy against ground truth annotated dataset."""
+    test_dataset = AnnotatedDataset.model_validate({"data": load_jsonl(test_dataset_path)})
+    ground_truth_dataset = AnnotatedDataset.model_validate({"data": load_jsonl(ground_truth_path)})
+    
+    # Create mappings for both datasets by query ID and document ID
+    test_scores = {}
+    for test_data in test_dataset.data:
+        test_scores[test_data.query.id] = {doc.id: doc.score for doc in test_data.documents}
+        
+    gt_scores = {}
+    for gt_data in ground_truth_dataset.data:
+        gt_scores[gt_data.query.id] = {doc.id: doc.score for doc in gt_data.documents}
 
-    async def calculate_accuracy(data: QueryDocuments) -> tuple[str, float]:
-        reranker_scores = await reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
-        ground_truth_scores = await ground_truth_reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
-        return data.query.id, _accuracy(reranker_scores, ground_truth_scores)
+    def calculate_accuracy(test_data) -> tuple[str, float]:
+        query_id = test_data.query.id
+        if query_id not in gt_scores:
+            raise ValueError(f"Query ID {query_id} not found in ground truth dataset")
+        
+        # Limit documents if specified
+        documents = test_data.documents[:document_limit] if document_limit else test_data.documents
+        
+        # Get test scores and ground truth scores, ensuring document ID matching
+        test_doc_scores = []
+        ground_truth_doc_scores = []
+        
+        for doc in documents:
+            if doc.id not in gt_scores[query_id]:
+                raise ValueError(f"Document ID {doc.id} not found for query {query_id} in ground truth dataset")
+            if doc.id not in test_scores[query_id]:
+                raise ValueError(f"Document ID {doc.id} not found for query {query_id} in test dataset")
+                
+            test_doc_scores.append(test_scores[query_id][doc.id])
+            ground_truth_doc_scores.append(gt_scores[query_id][doc.id])
+        
+        return query_id, _accuracy(test_doc_scores, ground_truth_doc_scores)
 
-    accuracy_scores : list[tuple[str, float]] = await tqdm.gather(*[calculate_accuracy(data) for data in dataset.data], desc="Calculating Accuracy Scores")
-    accuracy_scores = {query_id: score for query_id, score in accuracy_scores}
-    accuracy_scores = [accuracy_scores[data.query.id] for data in dataset.data]
+    accuracy_results = [calculate_accuracy(data) for data in test_dataset.data]
+    accuracy_scores = [score for _, score in accuracy_results]
 
     return accuracy_scores
 
-async def recall_at_k(dataset_path: str, reranker: BaseReranker, ground_truth_reranker: BaseReranker, k: int, *, k_gt: int | None = None, document_limit: int = 10) -> list[float]:
-    dataset = Dataset.model_validate({"data": load_jsonl(dataset_path)})
+def recall_at_k(test_dataset_path: str, ground_truth_path: str, k: int, *, k_gt: int | None = None, document_limit: int = 10) -> list[float]:
+    """Benchmark recall@k between two annotated datasets."""
+    test_dataset = AnnotatedDataset.model_validate({"data": load_jsonl(test_dataset_path)})
+    ground_truth_dataset = AnnotatedDataset.model_validate({"data": load_jsonl(ground_truth_path)})
     if k_gt is None:
         k_gt = k
-
-    async def calculate_recall(data: QueryDocuments) -> tuple[str, float]:
-        reranker_scores = await reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
-        ground_truth_scores = await ground_truth_reranker.score(RerankerInput(query=data.query.query, documents=[doc.content for doc in data.documents[:document_limit]]))
-        truth_indices = argsort(ground_truth_scores)[::-1][:k_gt]
-        reranker_indices = argsort(reranker_scores)[::-1][:k]
-        intersections = set(truth_indices) & set(reranker_indices)
-        return data.query.id, len(intersections) / k_gt
     
-    recall_scores : list[tuple[str, float]] = await tqdm.gather(*[calculate_recall(data) for data in dataset.data], desc="Calculating Recall Scores")
-    recall_scores = {query_id: score for query_id, score in recall_scores}
-    recall_scores = [recall_scores[data.query.id] for data in dataset.data]
+    # Create mappings for both datasets by query ID and document ID
+    test_scores = {}
+    for test_data in test_dataset.data:
+        test_scores[test_data.query.id] = {doc.id: doc.score for doc in test_data.documents}
+        
+    gt_scores = {}
+    for gt_data in ground_truth_dataset.data:
+        gt_scores[gt_data.query.id] = {doc.id: doc.score for doc in gt_data.documents}
+
+    def calculate_recall(test_data) -> tuple[str, float]:
+        query_id = test_data.query.id
+        if query_id not in gt_scores:
+            raise ValueError(f"Query ID {query_id} not found in ground truth dataset")
+        
+        # Limit documents if specified
+        documents = test_data.documents[:document_limit] if document_limit else test_data.documents
+        
+        # Get test scores and ground truth scores, ensuring document ID matching
+        test_doc_scores = []
+        ground_truth_doc_scores = []
+        
+        for doc in documents:
+            if doc.id not in gt_scores[query_id]:
+                raise ValueError(f"Document ID {doc.id} not found for query {query_id} in ground truth dataset")
+            if doc.id not in test_scores[query_id]:
+                raise ValueError(f"Document ID {doc.id} not found for query {query_id} in test dataset")
+                
+            test_doc_scores.append(test_scores[query_id][doc.id])
+            ground_truth_doc_scores.append(gt_scores[query_id][doc.id])
+        
+        truth_indices = argsort(ground_truth_doc_scores)[::-1][:k_gt]
+        test_indices = argsort(test_doc_scores)[::-1][:k]
+        intersections = set(truth_indices) & set(test_indices)
+        return query_id, len(intersections) / k_gt
+    
+    recall_results = [calculate_recall(data) for data in test_dataset.data]
+    recall_scores = [score for _, score in recall_results]
     return recall_scores
 
 if __name__ == "__main__":
-    zerank = Zerank("zerank-1")
-    reranker = EnsembleReranker("tmp/legalquad_annotated.jsonl")
-    asyncio.run(benchmark_ndcg("tmp/legalquad.jsonl", zerank, reranker, visualize=True))
-    asyncio.run(benchmark_accuracy("tmp/legalquad.jsonl", zerank, reranker))
-    asyncio.run(recall_at_k("tmp/legalquad.jsonl", zerank, reranker, 10, k_gt=10))
+    # Example: Compare two annotated datasets
+    benchmark_ndcg("tmp/test_annotated.jsonl", "tmp/ground_truth_annotated.jsonl", visualize=True)
+    benchmark_accuracy("tmp/test_annotated.jsonl", "tmp/ground_truth_annotated.jsonl")
+    recall_at_k("tmp/test_annotated.jsonl", "tmp/ground_truth_annotated.jsonl", 10, k_gt=10)

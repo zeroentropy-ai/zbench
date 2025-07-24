@@ -13,8 +13,8 @@ from zbench.utils import (
 from zbench.common_types import DatasetPairs, DatasetPair, Dataset, AnnotatedDataset, AnnotatedQueryDocuments, AnnotatedDocument, DatasetPairScoredPairs, DatasetPairDocument
 from zbench.score import Score
 
-class DatasetAnnotator:
-    def __init__(self, dataset_path: str, *, cycle_num: int = 4, document_limit: int = 10):
+class EnsembleELOAnnotator:
+    def __init__(self, dataset_path: str, annotated_dataset_path: str, *, cycle_num: int = 4, document_limit: int = 10):
         self.initial_path = Path(dataset_path)
         self.dataset_name = self.initial_path.stem
         self.working_dir = Path(f"data/annotation/{self.dataset_name}")
@@ -25,8 +25,8 @@ class DatasetAnnotator:
         # File paths
         self.dataset_path = self.working_dir / "dataset.jsonl"
         self.pairs_path = self.working_dir / "pairs.json"
-        self.ai_scores_path = self.working_dir / "sai_scores.json"
-        self.annotated_dataset_path = self.initial_dir / f"{self.dataset_name}_annotated.jsonl"
+        self.ai_scores_path = self.working_dir / "ai_scores.json"
+        self.annotated_dataset_path = annotated_dataset_path
         
         # Ensure folder exists
         self.working_dir.mkdir(parents=True, exist_ok=True)
@@ -142,7 +142,7 @@ class DatasetAnnotator:
 
         print(f"Saved annotated dataset to {self.annotated_dataset_path}")
     
-    async def annotate(self) -> None:
+    async def elo_annotate(self) -> None:
         """Run the complete pipeline."""
     
         try:
@@ -173,13 +173,13 @@ async def main():
     parser.add_argument("--document_limit", type=int, default=10, help="Number of documents to use for scoring")
     args = parser.parse_args()
     
-    processor = DatasetAnnotator(
+    processor = EnsembleELOAnnotator(
         dataset_path=args.dataset_path,
         cycle_num=args.cycle_num,
         document_limit=args.document_limit,
     )
     
-    await processor.annotate()
+    await processor.elo_annotate()
 
 
 if __name__ == "__main__":
